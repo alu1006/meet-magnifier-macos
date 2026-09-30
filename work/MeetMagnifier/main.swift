@@ -5,11 +5,130 @@ import OSLog
 
 private let appName = "Meet 放大鏡"
 
+private enum DrawingMode {
+    case arrow
+    case rectangle
+}
+
+private struct AnnotationShape {
+    let mode: DrawingMode
+    let start: NSPoint
+    let end: NSPoint
+}
+
+@MainActor
+private final class AnnotationView: NSView {
+    var mode: DrawingMode?
+    var onFinished: (() -> Void)?
+    var magnifiedCursorPoint: NSPoint? { didSet { needsDisplay = true } }
+    private(set) var shapes: [AnnotationShape] = []
+    private var dragStart: NSPoint?
+    private var dragEnd: NSPoint?
+
+    override var isFlipped: Bool { false }
+
+    override func mouseDown(with event: NSEvent) {
+        guard mode != nil else { return }
+        dragStart = convert(event.locationInWindow, from: nil)
+        dragEnd = dragStart
+        needsDisplay = true
+    }
+
+    override func mouseDragged(with event: NSEvent) {
+        guard dragStart != nil else { return }
+        dragEnd = convert(event.locationInWindow, from: nil)
+        needsDisplay = true
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        guard let mode, let start = dragStart else { return }
+        let end = convert(event.locationInWindow, from: nil)
+        if hypot(end.x - start.x, end.y - start.y) > 8 {
+            shapes.append(AnnotationShape(mode: mode, start: start, end: end))
+        }
+        dragStart = nil
+        dragEnd = nil
+        self.mode = nil
+        needsDisplay = true
+        onFinished?()
+    }
+
+    func clear() {
+        shapes.removeAll()
+        dragStart = nil
+        dragEnd = nil
+        mode = nil
+        needsDisplay = true
+    }
+
+    func addTestShapes() {
+        shapes.append(AnnotationShape(mode: .arrow, start: NSPoint(x: 80, y: 80), end: NSPoint(x: 220, y: 180)))
+        shapes.append(AnnotationShape(mode: .rectangle, start: NSPoint(x: 280, y: 80), end: NSPoint(x: 480, y: 220)))
+        needsDisplay = true
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        super.draw(dirtyRect)
+        NSColor.systemRed.setStroke()
+        for shape in shapes { draw(shape) }
+        if let mode, let start = dragStart, let end = dragEnd {
+            draw(AnnotationShape(mode: mode, start: start, end: end))
+        }
+        if let point = magnifiedCursorPoint { drawLargeCursor(at: point) }
+    }
+
+    private func draw(_ shape: AnnotationShape) {
+        let path = NSBezierPath()
+        path.lineWidth = 6
+        path.lineCapStyle = .round
+        path.lineJoinStyle = .round
+        switch shape.mode {
+        case .rectangle:
+            path.appendRect(NSRect(x: min(shape.start.x, shape.end.x),
+                                   y: min(shape.start.y, shape.end.y),
+                                   width: abs(shape.end.x - shape.start.x),
+                                   height: abs(shape.end.y - shape.start.y)))
+        case .arrow:
+            path.move(to: shape.start)
+            path.line(to: shape.end)
+            let angle = atan2(shape.end.y - shape.start.y, shape.end.x - shape.start.x)
+            let head: CGFloat = 24
+            path.move(to: shape.end)
+            path.line(to: NSPoint(x: shape.end.x - head * cos(angle - .pi / 6),
+                                  y: shape.end.y - head * sin(angle - .pi / 6)))
+            path.move(to: shape.end)
+            path.line(to: NSPoint(x: shape.end.x - head * cos(angle + .pi / 6),
+                                  y: shape.end.y - head * sin(angle + .pi / 6)))
+        }
+        path.stroke()
+    }
+
+    private func drawLargeCursor(at point: NSPoint) {
+        // Large, high-contrast arrow with its tip exactly on the real pointer hotspot.
+        let path = NSBezierPath()
+        path.move(to: point)
+        path.line(to: NSPoint(x: point.x + 2, y: point.y - 58))
+        path.line(to: NSPoint(x: point.x + 17, y: point.y - 44))
+        path.line(to: NSPoint(x: point.x + 29, y: point.y - 68))
+        path.line(to: NSPoint(x: point.x + 43, y: point.y - 61))
+        path.line(to: NSPoint(x: point.x + 31, y: point.y - 39))
+        path.line(to: NSPoint(x: point.x + 53, y: point.y - 38))
+        path.close()
+        path.lineWidth = 4
+        path.lineJoinStyle = .round
+        NSColor.white.setFill()
+        NSColor.black.setStroke()
+        path.fill()
+        path.stroke()
+    }
+}
+
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem!
     private var panel: NSPanel!
     private var imageView: NSImageView!
+    private var annotationView: AnnotationView!
     private var globalScrollMonitor: Any?
     private var localScrollMonitor: Any?
     private var timer: Timer?
@@ -20,14 +139,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var eventTap: CFMachPort?
     private var tapSource: CFRunLoopSource?
     private var captureInProgress = false
-    private var hotKeyRef: EventHotKeyRef?
-    private var resetHotKeyRef: EventHotKeyRef?
+    private var hotKeyRefs: [EventHotKeyRef] = []
     private var hotKeyHandler: EventHandlerRef?
     private let logger = Logger(subsystem: "local.codex.MeetMagnifier", category: "diagnostics")
     private var permissionTimer: Timer?
     private var permissionItem: NSMenuItem!
     private var permissionAlertShown = false
     private var frameCount = 0
+    private var cursorMagnified = false
+    private var cursorTimer: Timer?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         createPanel()
@@ -50,8 +170,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationWillTerminate(_ notification: Notification) {
         if let monitor = globalScrollMonitor { NSEvent.removeMonitor(monitor) }
         if let monitor = localScrollMonitor { NSEvent.removeMonitor(monitor) }
-        if let ref = hotKeyRef { UnregisterEventHotKey(ref) }
-        if let ref = resetHotKeyRef { UnregisterEventHotKey(ref) }
+        for ref in hotKeyRefs { UnregisterEventHotKey(ref) }
         if let handler = hotKeyHandler { RemoveEventHandler(handler) }
     }
 
@@ -84,6 +203,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         imageView.layer?.masksToBounds = true
         panel.contentView?.addSubview(imageView)
 
+        annotationView = AnnotationView(frame: panel.contentView!.bounds)
+        annotationView.autoresizingMask = [.width, .height]
+        annotationView.wantsLayer = true
+        annotationView.layer?.backgroundColor = NSColor.clear.cgColor
+        annotationView.onFinished = { [weak self] in self?.finishDrawing() }
+        panel.contentView?.addSubview(annotationView)
+
         positionPanel()
     }
 
@@ -98,12 +224,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusItem.button?.image = NSImage(systemSymbolName: "magnifyingglass.circle.fill", accessibilityDescription: appName)
 
         let menu = NSMenu()
-        let toggle = NSMenuItem(title: "開啟／關閉放大鏡", action: #selector(toggleEnabled), keyEquivalent: "")
-        toggle.keyEquivalentModifierMask = [.control, .option]
+        let toggle = NSMenuItem(title: "放大／還原滑鼠游標", action: #selector(toggleCursorMagnifier), keyEquivalent: "")
+        toggle.keyEquivalentModifierMask = [.control]
         toggle.keyEquivalent = "m"
         menu.addItem(toggle)
-        let reset = NSMenuItem(title: "強制回到原大小", action: #selector(resetZoom), keyEquivalent: "0")
-        reset.keyEquivalentModifierMask = [.control, .option]
+        let arrow = NSMenuItem(title: "畫箭頭", action: #selector(beginArrow), keyEquivalent: "a")
+        arrow.keyEquivalentModifierMask = [.control]
+        menu.addItem(arrow)
+        let rectangle = NSMenuItem(title: "畫方框", action: #selector(beginRectangle), keyEquivalent: "r")
+        rectangle.keyEquivalentModifierMask = [.control]
+        menu.addItem(rectangle)
+        let reset = NSMenuItem(title: "清除並強制回到原大小", action: #selector(resetAll), keyEquivalent: "0")
+        reset.keyEquivalentModifierMask = [.control]
         menu.addItem(reset)
         menu.addItem(.separator())
         let help = NSMenuItem(title: "操作：⌃ + 滾輪調整倍率", action: nil, keyEquivalent: "")
@@ -201,21 +333,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                                   MemoryLayout<EventHotKeyID>.size, nil, &hotKeyID)
             }
             Task { @MainActor in
-                if hotKeyID.id == 2 { delegate.resetZoom() }
-                else { delegate.toggleEnabled() }
+                switch hotKeyID.id {
+                case 2: delegate.resetAll()
+                case 3: delegate.beginArrow()
+                case 4: delegate.beginRectangle()
+                default: delegate.toggleCursorMagnifier()
+                }
             }
             return noErr
         }
         InstallEventHandler(GetApplicationEventTarget(), callback, 1, &eventType,
                             Unmanaged.passUnretained(self).toOpaque(), &hotKeyHandler)
-        let id = EventHotKeyID(signature: OSType(0x4D41474E), id: 1) // MAGN
-        let result = RegisterEventHotKey(UInt32(kVK_ANSI_M), UInt32(controlKey | optionKey), id,
-                            GetApplicationEventTarget(), 0, &hotKeyRef)
-        let resetID = EventHotKeyID(signature: OSType(0x4D41474E), id: 2)
-        let resetResult = RegisterEventHotKey(UInt32(kVK_ANSI_0), UInt32(controlKey | optionKey), resetID,
-                            GetApplicationEventTarget(), 0, &resetHotKeyRef)
-        logger.notice("Hotkey registration result: \(result)")
-        logger.notice("Reset hotkey registration result: \(resetResult)")
+        let keys: [(UInt32, UInt32, String)] = [
+            (1, UInt32(kVK_ANSI_M), "magnify"),
+            (2, UInt32(kVK_ANSI_0), "reset"),
+            (3, UInt32(kVK_ANSI_A), "arrow"),
+            (4, UInt32(kVK_ANSI_R), "rectangle")
+        ]
+        for (idNumber, keyCode, name) in keys {
+            var ref: EventHotKeyRef?
+            let id = EventHotKeyID(signature: OSType(0x4D41474E), id: idNumber)
+            let result = RegisterEventHotKey(keyCode, UInt32(controlKey), id,
+                                             GetApplicationEventTarget(), 0, &ref)
+            if let ref { hotKeyRefs.append(ref) }
+            logger.notice("Hotkey \(name, privacy: .public) registration result: \(result)")
+        }
     }
 
     private func requestScreenRecordingPermission() {
@@ -226,10 +368,82 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func toggleEnabled() {
         logger.notice("Toggle hotkey/menu received")
-        if isEnabled { resetZoom() } else { zoom = 2.5; setEnabled(true) }
+        if isEnabled {
+            zoom = 1
+            setEnabled(false)
+        } else {
+            zoom = 2.5
+            setEnabled(true)
+        }
     }
 
-    @objc private func resetZoom() { zoom = 1; setEnabled(false) }
+    @objc private func toggleCursorMagnifier() {
+        cursorMagnified.toggle()
+        cursorTimer?.invalidate()
+        cursorTimer = nil
+        if cursorMagnified {
+            positionPanel()
+            updateMagnifiedCursor()
+            cursorTimer = Timer(timeInterval: 1.0 / 60.0, repeats: true) { [weak self] _ in
+                Task { @MainActor in self?.updateMagnifiedCursor() }
+            }
+            RunLoop.main.add(cursorTimer!, forMode: .common)
+        } else {
+            annotationView.magnifiedCursorPoint = nil
+        }
+        updatePanelVisibility()
+        logger.notice("Large cursor: \(self.cursorMagnified)")
+    }
+
+    private func updateMagnifiedCursor() {
+        guard cursorMagnified else { return }
+        let mouse = NSEvent.mouseLocation
+        if let screen = NSScreen.screens.first(where: { $0.frame.contains(mouse) }), panel.frame != screen.frame {
+            panel.setFrame(screen.frame, display: false)
+        }
+        annotationView.magnifiedCursorPoint = NSPoint(x: mouse.x - panel.frame.minX,
+                                                       y: mouse.y - panel.frame.minY)
+        panel.orderFrontRegardless()
+    }
+
+    @objc private func beginArrow() { beginDrawing(.arrow) }
+
+    @objc private func beginRectangle() { beginDrawing(.rectangle) }
+
+    private func beginDrawing(_ mode: DrawingMode) {
+        positionPanel()
+        annotationView.mode = mode
+        panel.ignoresMouseEvents = false
+        panel.orderFrontRegardless()
+        NSCursor.crosshair.set()
+        logger.notice("Drawing mode started: \(String(describing: mode), privacy: .public)")
+    }
+
+    private func finishDrawing() {
+        panel.ignoresMouseEvents = true
+        NSCursor.arrow.set()
+        updatePanelVisibility()
+    }
+
+    @objc private func resetAll() {
+        zoom = 1
+        cursorMagnified = false
+        cursorTimer?.invalidate()
+        cursorTimer = nil
+        annotationView.clear()
+        annotationView.magnifiedCursorPoint = nil
+        panel.ignoresMouseEvents = true
+        NSCursor.arrow.set()
+        setEnabled(false)
+    }
+
+    private func updatePanelVisibility() {
+        if isEnabled || cursorMagnified || !annotationView.shapes.isEmpty || annotationView.mode != nil {
+            panel.orderFrontRegardless()
+        } else {
+            panel.orderOut(nil)
+        }
+    }
 
     private func setEnabled(_ enabled: Bool) {
         if enabled && !CGPreflightScreenCaptureAccess() {
@@ -246,12 +460,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         timer = nil
         if enabled {
             positionPanel()
+            imageView.isHidden = false
             timer = Timer(timeInterval: 1.0 / 24.0, repeats: true) { [weak self] _ in
                 Task { @MainActor in await self?.captureCursorArea() }
             }
             RunLoop.main.add(timer!, forMode: .common)
         } else {
-            panel.orderOut(nil)
+            imageView.image = nil
+            imageView.isHidden = true
+            updatePanelVisibility()
         }
         statusItem.button?.image = NSImage(
             systemSymbolName: enabled ? "magnifyingglass.circle.fill" : "magnifyingglass.circle",
@@ -271,13 +488,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let raised = zoom > 1 && isEnabled
         await captureCursorArea()
         let captured = frameCount > 0
-        logger.notice("SELFTEST scroll magnification=\(raised), capture=\(captured), eventTap=\(self.eventTap != nil)")
+        annotationView.addTestShapes()
+        let drawing = annotationView.shapes.count == 2
+        toggleCursorMagnifier()
+        let largeCursor = cursorMagnified && annotationView.magnifiedCursorPoint != nil
+        logger.notice("SELFTEST scroll magnification=\(raised), capture=\(captured), drawing=\(drawing), largeCursor=\(largeCursor), eventTap=\(self.eventTap != nil)")
         try? await Task.sleep(for: .seconds(8))
         guard let down = CGEvent(scrollWheelEvent2Source: nil, units: .line,
                                  wheelCount: 1, wheel1: 100, wheel2: 0, wheel3: 0),
               let downEvent = { () -> NSEvent? in down.flags = .maskControl; return NSEvent(cgEvent: down) }() else { return }
         handleScroll(downEvent)
-        logger.notice("SELFTEST return to 1x=\(self.zoom == 1 && !self.isEnabled && !self.panel.isVisible)")
+        resetAll()
+        logger.notice("SELFTEST reset=\(self.zoom == 1 && !self.isEnabled && !self.panel.isVisible && self.annotationView.shapes.isEmpty)")
     }
 
     private func showPermissionHelp() {
