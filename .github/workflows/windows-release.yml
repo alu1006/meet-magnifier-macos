@@ -1,0 +1,28 @@
+name: Build Windows
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "windows/**"
+      - ".github/workflows/windows-release.yml"
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+      - name: Publish single-file Windows app
+        run: dotnet publish windows/MeetMagnifier.Windows/MeetMagnifier.Windows.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -o dist
+      - name: Package
+        shell: pwsh
+        run: Compress-Archive -Path dist/MeetMagnifier.exe -DestinationPath Meet-Magnifier-1.2.0-Windows-x64.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Meet-Magnifier-1.2.0-Windows-x64
+          path: Meet-Magnifier-1.2.0-Windows-x64.zip
+          if-no-files-found: error
