@@ -9,7 +9,7 @@
     <ApplicationIcon>Assets\MeetMagnifier.ico</ApplicationIcon>
     <AssemblyName>MeetMagnifier</AssemblyName>
     <RootNamespace>MeetMagnifier</RootNamespace>
-    <Version>1.2.0</Version>
+    <Version>1.3.0</Version>
     <PublishSingleFile>true</PublishSingleFile>
     <SelfContained>true</SelfContained>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>

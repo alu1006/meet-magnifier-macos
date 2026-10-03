@@ -139,6 +139,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var eventTap: CFMachPort?
     private var tapSource: CFRunLoopSource?
     private var captureInProgress = false
+    private var isFrozen = false
     private var hotKeyRefs: [EventHotKeyRef] = []
     private var hotKeyHandler: EventHandlerRef?
     private let logger = Logger(subsystem: "local.codex.MeetMagnifier", category: "diagnostics")
@@ -312,6 +313,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard event.modifierFlags.contains(.control) else { return }
         let delta = event.scrollingDeltaY
         guard abs(delta) > 0.01 else { return }
+        if isFrozen {
+            isFrozen = false
+            logger.notice("Magnified view unfrozen by Control-scroll")
+        }
         // Additive changes make returning to exactly 1x predictable. A sufficiently
         // strong reverse gesture always closes the overlay instead of approaching 1x forever.
         let amount = event.hasPreciseScrollingDeltas ? -delta * 0.025 : -delta * 0.25
@@ -412,6 +417,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func beginDrawing(_ mode: DrawingMode) {
         positionPanel()
+        if isEnabled && zoom > 1 {
+            isFrozen = true
+            logger.notice("Magnified view frozen for drawing")
+        }
         annotationView.mode = mode
         panel.ignoresMouseEvents = false
         panel.orderFrontRegardless()
@@ -427,6 +436,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func resetAll() {
         zoom = 1
+        isFrozen = false
         cursorMagnified = false
         cursorTimer?.invalidate()
         cursorTimer = nil
@@ -456,6 +466,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
         isEnabled = enabled
+        if !enabled { isFrozen = false }
         timer?.invalidate()
         timer = nil
         if enabled {
@@ -513,7 +524,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func captureCursorArea() async {
-        guard isEnabled, !captureInProgress else { return }
+        guard isEnabled, !isFrozen, !captureInProgress else { return }
         captureInProgress = true
         defer { captureInProgress = false }
 
@@ -550,7 +561,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             config.captureResolution = .best
 
             let image = try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: config)
-            guard isEnabled else { return }
+            guard isEnabled, !isFrozen else { return }
             panel.setFrame(destination, display: false)
             imageView.image = NSImage(cgImage: image, size: outputSize)
             panel.orderFrontRegardless()

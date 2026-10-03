@@ -34,6 +34,7 @@ internal sealed class MagnifierContext : ApplicationContext
     private IntPtr mouseHook;
     private float zoom = 1f;
     private bool cursorMagnified;
+    private bool isFrozen;
 
     public MagnifierContext()
     {
@@ -93,6 +94,7 @@ internal sealed class MagnifierContext : ApplicationContext
             // wheel down increases magnification, wheel up decreases it.
             zoom = Math.Clamp(zoom - delta / 120f * 0.25f, 1f, 8f);
             if (zoom < 1.08f) zoom = 1f;
+            isFrozen = false;
             UpdateDisplay();
             return (IntPtr)1;
         }
@@ -108,6 +110,13 @@ internal sealed class MagnifierContext : ApplicationContext
 
     private void BeginDrawing(DrawMode mode)
     {
+        // Lock the current magnified viewport before the overlay starts receiving
+        // mouse input, otherwise the viewport follows the drawing pointer.
+        if (zoom > 1f)
+        {
+            UpdateDisplay();
+            isFrozen = true;
+        }
         overlay.SetScreen(Screen.FromPoint(Cursor.Position));
         overlay.Mode = mode;
         overlay.ClickThrough = false;
@@ -117,6 +126,7 @@ internal sealed class MagnifierContext : ApplicationContext
     private void ResetAll()
     {
         zoom = 1f;
+        isFrozen = false;
         cursorMagnified = false;
         overlay.CursorMagnified = false;
         overlay.ClearAnnotations();
@@ -132,7 +142,7 @@ internal sealed class MagnifierContext : ApplicationContext
         if (zoom > 1f)
         {
             magnifier.SetScreen(screen);
-            magnifier.SetZoom(zoom, point);
+            if (!isFrozen) magnifier.SetZoom(zoom, point);
             magnifier.ShowWithoutFocus();
         }
         else

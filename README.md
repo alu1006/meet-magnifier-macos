@@ -16,8 +16,8 @@ https://github.com/user-attachments/assets/ddc44b32-fe4f-48a5-8810-8568c99cb6d3
 
 前往 [Releases](../../releases/latest) 下載適合的版本：
 
-- macOS：`Meet-Magnifier-1.1.0-macOS.zip`
-- Windows 10/11 x64：`Meet-Magnifier-1.2.0-Windows-x64.zip`
+- macOS：`Meet-Magnifier-1.3.0-macOS.zip`
+- Windows 10/11 x64：`Meet-Magnifier-1.3.0-Windows-x64.zip`
 
 Windows 版解壓縮後直接執行 `MeetMagnifier.exe`。若 SmartScreen 顯示未知發行者，請檢查檔案來自本專案的 Release；目前公開版本未購買 Windows 程式碼簽署憑證。
 
@@ -29,9 +29,11 @@ Windows 版解壓縮後直接執行 `MeetMagnifier.exe`。若 SmartScreen 顯示
 | --- | --- |
 | `Control + 滾輪` | 全螢幕放大／縮小，方向與 macOS 原生縮放一致 |
 | `Control + M` | 切換大型高對比滑鼠游標 |
-| `Control + A` | 進入箭頭模式，拖曳滑鼠畫箭頭 |
-| `Control + R` | 進入方框模式，拖曳滑鼠框選 |
+| `Control + A` | 凍結目前放大畫面，拖曳滑鼠畫箭頭 |
+| `Control + R` | 凍結目前放大畫面，拖曳滑鼠框選 |
 | `Control + 0` | 清除標註並強制回到 1 倍 |
+
+畫面已放大時，進入箭頭或方框模式會先凍結當下的放大位置，避免底圖跟著繪圖滑鼠移動。再次使用 `Control + 滾輪` 會解除凍結並繼續調整倍率；`Control + 0` 則會清除標註、解除凍結並回到原大小。
 
 ## 首次設定
 

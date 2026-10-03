@@ -14,8 +14,10 @@ xcrun swiftc "$ROOT/main.swift" \
   -parse-as-library
 cp "$ROOT/Info.plist" "$STAGE/Contents/Info.plist"
 cp "$ROOT/AppIcon.icns" "$STAGE/Contents/Resources/AppIcon.icns"
+xattr -cr "$STAGE"
 codesign --force --sign D46B6C4212DA2520A94167F445EA10801CBDE92B \
   --identifier local.codex.MeetMagnifier "$STAGE"
 rm -rf "$APP"
 ditto "$STAGE" "$APP"
+xattr -cr "$APP"
 echo "$APP"
