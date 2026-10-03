@@ -2,6 +2,12 @@
 
 macOS 簡報輔助工具，將全螢幕縮放、大型滑鼠游標、箭頭與方框直接顯示在螢幕覆蓋層，因此 Google Meet 分享「整個螢幕」時也能讓觀眾看到。
 
+## 宣傳影片
+
+[▶ 觀看 23 秒功能示範](media/Meet-Magnifier-Promo.mp4)｜[下載 MP4](../../releases/download/v1.2.0/Meet-Magnifier-Promo.mp4)
+
+影片依序展示全螢幕放大、大型游標、箭頭與方框，解析度為 1080p。
+
 ## 下載
 
 前往 [Releases](../../releases/latest) 下載適合的版本：
