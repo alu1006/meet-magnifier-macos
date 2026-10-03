@@ -4,7 +4,7 @@ macOS 簡報輔助工具，將全螢幕縮放、大型滑鼠游標、箭頭與�
 
 ## 宣傳影片
 
-[▶ 觀看 23 秒功能示範](media/Meet-Magnifier-Promo.mp4)｜[下載 MP4](../../releases/download/v1.2.0/Meet-Magnifier-Promo.mp4)
+https://github.com/user-attachments/assets/ddc44b32-fe4f-48a5-8810-8568c99cb6d3
 
 影片依序展示全螢幕放大、大型游標、箭頭與方框，解析度為 1080p。
 
