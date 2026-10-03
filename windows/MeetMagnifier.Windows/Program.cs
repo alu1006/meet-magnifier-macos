@@ -57,7 +57,7 @@ internal sealed class MagnifierContext : ApplicationContext
         menu.Items.Add("結束", null, (_, _) => ExitThread());
         tray = new NotifyIcon
         {
-            Icon = SystemIcons.Information,
+            Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath) ?? SystemIcons.Application,
             Text = "Meet 放大鏡",
             ContextMenuStrip = menu,
             Visible = true

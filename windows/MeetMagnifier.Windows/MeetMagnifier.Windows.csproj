@@ -6,6 +6,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>Assets\MeetMagnifier.ico</ApplicationIcon>
     <AssemblyName>MeetMagnifier</AssemblyName>
     <RootNamespace>MeetMagnifier</RootNamespace>
     <Version>1.2.0</Version>

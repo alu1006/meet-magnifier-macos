@@ -1,5 +1,9 @@
 # Meet 放大鏡
 
+<p align="center">
+  <img src="assets/MeetMagnifier-AppIcon.png" width="180" alt="Meet 放大鏡應用程式圖示">
+</p>
+
 macOS 簡報輔助工具，將全螢幕縮放、大型滑鼠游標、箭頭與方框直接顯示在螢幕覆蓋層，因此 Google Meet 分享「整個螢幕」時也能讓觀眾看到。
 
 ## 宣傳影片

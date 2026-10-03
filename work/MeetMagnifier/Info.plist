@@ -6,6 +6,7 @@
   <key>CFBundleDisplayName</key><string>Meet 放大鏡</string>
   <key>CFBundleExecutable</key><string>MeetMagnifier</string>
   <key>CFBundleIdentifier</key><string>local.codex.MeetMagnifier</string>
+  <key>CFBundleIconFile</key><string>AppIcon</string>
   <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
   <key>CFBundleName</key><string>MeetMagnifier</string>
   <key>CFBundlePackageType</key><string>APPL</string>
